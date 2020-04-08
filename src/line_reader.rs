@@ -21,7 +21,7 @@ fn shiftr(range: &Range<usize>, by: usize) -> Range<usize> {
 }
 
 fn shiftl(range: &Range<usize>, by: usize) -> Range<usize> {
-    let s = range.start.checked_sub(by).unwrap_or(0);
+    let s = range.start.saturating_sub(by);
     let diff = range.start - s;
     s..range.end - diff
 }
@@ -31,7 +31,7 @@ fn extendr(range: &Range<usize>, by: usize) -> Range<usize> {
 }
 
 fn extendl(range: &Range<usize>, by: usize) -> Range<usize> {
-    range.start.checked_sub(by).unwrap_or(0)..range.end
+    range.start.saturating_sub(by)..range.end
 }
 
 impl LinesRange {
@@ -77,17 +77,16 @@ impl LinesRange {
             Sign::Neg => LinesRange::neg(extendl(&self.range, by)),
         }
     }
-
 }
 
 fn inverted(range: &Range<usize>, len: usize) -> Range<usize> {
-    let start = len.checked_sub(range.end).unwrap_or(0);
-    let end = len.checked_sub(range.start).unwrap_or(0);
+    let start = len.saturating_sub(range.end);
+    let end = len.saturating_sub(range.start);
     start..end
 }
 
 fn limit(range: &Range<usize>, to: usize) -> Range<usize> {
-    min(to.checked_sub(1).unwrap_or(0), range.start)..min(to, range.end)
+    min(to.saturating_sub(1), range.start)..min(to, range.end)
 }
 
 pub struct ReadLines<'a> {
@@ -103,12 +102,13 @@ pub struct LineReader<'a> {
     eols_forw: Vec<usize>,
     eols_back: Vec<usize>,
     eols_iter: Eols<'a>,
+    pub filename: &'a str,
     buf: &'a [u8],
     full: bool,
 }
 
 impl<'a> LineReader<'a> {
-    pub fn new(buf: &'a [u8]) -> Self {
+    pub fn new(buf: &'a [u8], filename: &'a str) -> Self {
         let it = iter::once(usize::max_value())
             .chain(memchr_iter(b'\n', &buf[..]))
             .chain(iter::once(buf.len()));
@@ -117,6 +117,7 @@ impl<'a> LineReader<'a> {
             eols_back: vec![],
             eols_iter: it,
             buf: buf,
+            filename: filename,
             full: false,
         }
     }
@@ -140,14 +141,14 @@ impl<'a> LineReader<'a> {
         false
     }
 
-    pub fn read(&mut self, range: &LinesRange) -> ReadLines {
+    pub fn read(&mut self, range: &LinesRange) -> ReadLines<'a> {
         match range.sign {
             Sign::Pos => self.read_forw(&range.range),
             Sign::Neg => self.read_back(&range.range),
         }
     }
 
-    fn read_forw(&mut self, range: &Range<usize>) -> ReadLines {
+    fn read_forw(&mut self, range: &Range<usize>) -> ReadLines<'a> {
         if !self.full
             && Self::extend(
                 &mut self.eols_forw,
@@ -160,11 +161,11 @@ impl<'a> LineReader<'a> {
             self.eols_back.clear();
             self.full = true;
         }
-        let available_lines = self.eols_forw.len().checked_sub(1).unwrap_or(0);
+        let available_lines = self.eols_forw.len().saturating_sub(1);
         let range = limit(range, available_lines);
         let slice = &self.eols_forw[range.start..range.end + 1];
-        let s = slice.first().unwrap_or(&0).clone();
-        let e = slice.last().unwrap_or(&0).clone();
+        let s = *slice.first().unwrap_or(&0);
+        let e = *slice.last().unwrap_or(&0);
         ReadLines {
             range: LinesRange::pos(range),
             buf_range: s..e,
@@ -172,7 +173,7 @@ impl<'a> LineReader<'a> {
         }
     }
 
-    fn read_back(&mut self, range: &Range<usize>) -> ReadLines {
+    fn read_back(&mut self, range: &Range<usize>) -> ReadLines<'a> {
         if self.full
             || Self::extend(
                 &mut self.eols_back,
@@ -186,12 +187,12 @@ impl<'a> LineReader<'a> {
             self.full = true;
             return self.read_forw(&inverted(range, self.eols_forw.len() - 1));
         }
-        let available_lines = self.eols_back.len().checked_sub(1).unwrap_or(0);
+        let available_lines = self.eols_back.len().saturating_sub(1);
         let range = limit(range, available_lines);
         let mut requested_eols = vec![];
         let slice = &self.eols_back[range.start..range.end + 1];
-        let s = slice.first().unwrap_or(&0).clone();
-        let e = slice.last().unwrap_or(&0).clone();
+        let s = *slice.first().unwrap_or(&0);
+        let e = *slice.last().unwrap_or(&0);
         requested_eols.extend(slice.iter().rev());
         ReadLines {
             range: LinesRange::neg(range),
