@@ -98,7 +98,7 @@ pub struct ReadLines<'a> {
 type Eols<'a> =
     iter::Chain<iter::Chain<iter::Once<usize>, Memchr<'a>>, iter::Once<usize>>;
 
-pub struct LineReader<'a> {
+pub struct Buffer<'a> {
     eols_forw: Vec<usize>,
     eols_back: Vec<usize>,
     eols_iter: Eols<'a>,
@@ -107,12 +107,12 @@ pub struct LineReader<'a> {
     full: bool,
 }
 
-impl<'a> LineReader<'a> {
+impl<'a> Buffer<'a> {
     pub fn new(buf: &'a [u8], filename: &'a str) -> Self {
         let it = iter::once(usize::max_value())
             .chain(memchr_iter(b'\n', &buf[..]))
             .chain(iter::once(buf.len()));
-        LineReader {
+        Buffer {
             eols_forw: vec![],
             eols_back: vec![],
             eols_iter: it,

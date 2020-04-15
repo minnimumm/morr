@@ -13,7 +13,7 @@ use std::iter;
 
 mod line_reader;
 
-use line_reader::{LineReader, LinesRange, ReadLines};
+use line_reader::{Buffer, LinesRange, ReadLines};
 
 fn main() -> Result<(), DrawError> {
     let filename = env::args().nth(1).expect("No file name passed");
@@ -24,7 +24,7 @@ fn main() -> Result<(), DrawError> {
     let events = iter::repeat_with(event::read).flatten();
     let commands = parse(events);
     let rows = screen.rows();
-    let mut line_reader = LineReader::new(&buf, &filename);
+    let mut line_reader = Buffer::new(&buf, &filename);
     let lines = line_reader.read(&LinesRange::pos(0..rows));
     let mut mode = NormalMode {
         line_reader: &mut line_reader,
@@ -44,7 +44,7 @@ fn main() -> Result<(), DrawError> {
 }
 
 struct NormalMode<'a> {
-    line_reader: &'a mut LineReader<'a>,
+    line_reader: &'a mut Buffer<'a>,
     current_range: LinesRange,
 }
 
