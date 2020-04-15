@@ -102,13 +102,12 @@ pub struct Buffer<'a> {
     eols_forw: Vec<usize>,
     eols_back: Vec<usize>,
     eols_iter: Eols<'a>,
-    pub filename: &'a str,
     buf: &'a [u8],
     full: bool,
 }
 
 impl<'a> Buffer<'a> {
-    pub fn new(buf: &'a [u8], filename: &'a str) -> Self {
+    pub fn new(buf: &'a [u8]) -> Self {
         let it = iter::once(usize::max_value())
             .chain(memchr_iter(b'\n', &buf[..]))
             .chain(iter::once(buf.len()));
@@ -117,7 +116,6 @@ impl<'a> Buffer<'a> {
             eols_back: vec![],
             eols_iter: it,
             buf: buf,
-            filename: filename,
             full: false,
         }
     }
