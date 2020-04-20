@@ -105,8 +105,7 @@ impl Mode {
     ) -> screen::Result<()>
     where
         S: Screen, {
-        let new_range =
-            mv(vmove, current_range.clone(), screen.content_bounds());
+        let new_range = mv(vmove, &current_range, screen.content_bounds());
         let requested_nr = new_range.range.size_hint().0;
         let lines = buf.read(&new_range);
         let lines = match requested_nr - lines.lines.len() {
@@ -218,7 +217,7 @@ impl<'a, S: screen::Screen> State<'a, S> {
 
 fn mv(
     mv: VerticalMove,
-    current_line_range: LinesRange,
+    current_line_range: &LinesRange,
     bounds: Rect,
 ) -> LinesRange {
     let max_lines = bounds.height() as usize;
