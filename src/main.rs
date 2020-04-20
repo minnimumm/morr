@@ -119,53 +119,51 @@ impl Mode {
         Ok(())
     }
 
-    fn parse_normal<'a, I: Iterator<Item = Event>>(
-        events: &'a mut I,
-    ) -> impl Iterator<Item = Reaction> + 'a {
-        events.flat_map(|evt| match evt {
+    fn react_view(event: Event) -> Reaction {
+        match event {
             Key(KeyEvent {
                 code: Char('q'), ..
-            }) => Some(Reaction::Quit),
+            }) => Reaction::Quit,
             Key(KeyEvent {
                 code: Char('j'), ..
-            }) => Some(Reaction::V(VerticalMove::LineDown)),
+            }) => Reaction::V(VerticalMove::LineDown),
             Key(KeyEvent { code: Up, .. }) => {
-                Some(Reaction::V(VerticalMove::LineUp))
+                Reaction::V(VerticalMove::LineUp)
             }
             Key(KeyEvent { code: Down, .. }) => {
-                Some(Reaction::V(VerticalMove::LineDown))
+                Reaction::V(VerticalMove::LineDown)
             }
             Key(KeyEvent {
                 code: Char('k'), ..
-            }) => Some(Reaction::V(VerticalMove::LineUp)),
+            }) => Reaction::V(VerticalMove::LineUp),
             Key(KeyEvent {
                 code: Char('d'),
                 modifiers: KeyModifiers::CONTROL,
-            }) => Some(Reaction::V(VerticalMove::HalfPageDown)),
+            }) => Reaction::V(VerticalMove::HalfPageDown),
             Key(KeyEvent {
                 code: Char('u'),
                 modifiers: KeyModifiers::CONTROL,
-            }) => Some(Reaction::V(VerticalMove::HalfPageUp)),
+            }) => Reaction::V(VerticalMove::HalfPageUp),
             Key(KeyEvent { code: PageDown, .. }) => {
-                Some(Reaction::V(VerticalMove::PageDown))
+                Reaction::V(VerticalMove::PageDown)
             }
             Key(KeyEvent { code: PageUp, .. }) => {
-                Some(Reaction::V(VerticalMove::PageUp))
+                Reaction::V(VerticalMove::PageUp)
             }
             Key(KeyEvent {
                 code: Char('G'), ..
-            }) => Some(Reaction::V(VerticalMove::Bottom)),
+            }) => Reaction::V(VerticalMove::Bottom),
             Key(KeyEvent {
                 code: Char('g'), ..
-            }) => Some(Reaction::V(VerticalMove::Top)),
+            }) => Reaction::V(VerticalMove::Top),
             Key(KeyEvent { code: Left, .. }) => {
-                Some(Reaction::H(HorizontalMove::Left))
+                Reaction::H(HorizontalMove::Left)
             }
             Key(KeyEvent { code: Right, .. }) => {
-                Some(Reaction::H(HorizontalMove::Right))
+                Reaction::H(HorizontalMove::Right)
             }
-            _ => None,
-        })
+            _ => Reaction::Skip,
+        }
     }
 }
 
