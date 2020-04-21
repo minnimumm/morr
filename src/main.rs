@@ -80,15 +80,16 @@ impl Mode {
             Mode::Viewing {
                 ref mut current_range,
             } => {
-                let commands = Mode::parse_normal(events);
+                let commands = events.map(Mode::react_view);
                 for cmd in commands {
                     match cmd {
                         Reaction::V(vmove) => {
                             Mode::view(vmove, current_range, screen, buf)
                                 .unwrap();
                         }
+                        Reaction::Skip => continue,
                         Reaction::Quit => return None,
-                        _ => return None,
+                        _ => continue,
                     }
                 }
                 None
@@ -209,6 +210,7 @@ impl<'a, S: screen::Screen> State<'a, S> {
                 self.mode_stack.push(next_mode);
             }
         }
+        self.screen.cleanup();
         Ok(())
     }
 }
@@ -259,6 +261,7 @@ enum HorizontalMove {
 
 enum Reaction {
     Quit,
+    Skip,
     V(VerticalMove),
     H(HorizontalMove),
 }

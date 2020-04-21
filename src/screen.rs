@@ -18,6 +18,22 @@ pub struct Rect {
     botright: Point,
 }
 
+
+pub enum Colour {
+    Normal
+}
+
+pub struct Style {
+    pub attrs: Vec<Attribute>,
+    pub colour: Colour, 
+}
+
+pub enum Attribute {
+    Bold,
+    Underline,
+    Inverse,
+}
+
 impl Rect {
     pub fn from_topleft(topleft: Point, width: u16, height: u16) -> Self {
         Self {
@@ -59,7 +75,7 @@ pub trait Screen {
     fn draw_header(&mut self, header: &[&str]) -> Result<()>;
     fn draw_status(&mut self, status: &str) -> Result<()>;
     fn draw_content(&mut self, content: &[&str]) -> Result<()>;
-    fn draw(&mut self, content: &[&str], bound: &Rect) -> Result<()>;
+    fn draw(&mut self, content: &[StyledString], bound: &Rect) -> Result<()>;
     fn cleanup(&mut self) -> Result<()>;
 }
 
@@ -103,6 +119,8 @@ impl From<crossterm::ErrorKind> for ScreenError {
         }
     }
 }
+
+type StyledString<'a> = Vec<(&'a str, &'a Style)>;
 
 impl Screen for ConsoleScreen {
     fn init(header_height: u16, status_height: u16) -> Result<Self> {
@@ -158,29 +176,43 @@ impl Screen for ConsoleScreen {
     }
 
     fn draw_header(&mut self, header: &[&str]) -> Result<()> {
-        self.draw(header, &self.header_bounds.clone())
+        let style = Style { attrs: vec![], colour: Colour::Normal };
+        let arg: Vec<StyledString> = header.iter().map(|&s| vec![(s, &style)]).collect();
+        self.draw(&arg, &self.header_bounds.clone())
     }
 
     fn draw_status(&mut self, status: &str) -> Result<()> {
-        self.draw(&[status], &self.status_bounds.clone())
+        let style = Style { attrs: vec![Attribute::Inverse], colour: Colour::Normal };
+        self.draw(&[vec![(status, &style)]], &self.status_bounds.clone())
     }
 
-    fn draw(&mut self, content: &[&str], bounds: &Rect) -> Result<()> {
+    fn draw(&mut self, content: &[StyledString], bounds: &Rect) -> Result<()> {
         let lines_to_draw = content.iter().take(bounds.height() as usize);
-        for (i, line) in lines_to_draw.enumerate() {
-            queue!(
-                self.out,
-                cursor::MoveTo(bounds.topleft.x, bounds.topleft.y + i as u16),
-                terminal::Clear(terminal::ClearType::UntilNewLine),
-                style::Print(line)
-            )?;
+        for (i, line_parts) in lines_to_draw.enumerate() {
+            let mv = cursor::MoveTo(bounds.topleft.x, bounds.topleft.y + i as u16);
+            self.out.execute(mv)?;
+            self.out.execute(terminal::Clear(terminal::ClearType::UntilNewLine))?;
+            for (line_part, style) in line_parts {
+                for attr in &style.attrs {
+                    let s = match attr {
+                        Attribute::Bold => style::Attribute::Bold,
+                        Attribute::Underline => style::Attribute::Underlined,
+                        Attribute::Inverse => style::Attribute::Reverse,
+                    };
+                    self.out.execute(style::SetAttribute(s))?;
+                }
+                self.out.execute(style::Print(line_part))?;
+                self.out.execute(style::SetAttribute(style::Attribute::Reset))?;
+            }
         }
         self.out.flush()?;
         Ok(())
     }
 
     fn draw_content(&mut self, content: &[&str]) -> Result<()> {
-        self.draw(content, &self.content_bounds.clone())
+        let style = Style { attrs: vec![], colour: Colour::Normal };
+        let arg: Vec<StyledString> = content.iter().map(|&s| vec![(s, &style)]).collect();
+        self.draw(&arg, &self.content_bounds.clone())
     }
 
     fn cleanup(&mut self) -> Result<()> {
