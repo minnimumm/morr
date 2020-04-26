@@ -1,10 +1,11 @@
 use std::io;
 
-use crossterm::{cursor, queue, style, terminal, ExecutableCommand};
-use std::io::{stdout, Stdout, Write};
 use std::marker::Sized;
 
-pub type Result<S> = std::result::Result<S, ScreenError>;
+#[path = "./con.rs"]
+mod con;
+
+use con::{Con, Cmd, Win};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Point {
@@ -18,14 +19,13 @@ pub struct Rect {
     botright: Point,
 }
 
-
 pub enum Colour {
-    Normal
+    Normal,
 }
 
 pub struct Style {
     pub attrs: Vec<Attribute>,
-    pub colour: Colour, 
+    pub colour: Colour,
 }
 
 pub enum Attribute {
@@ -66,26 +66,32 @@ impl Rect {
 }
 
 pub trait Screen {
-    fn init(header_height: u16, status_height: u16) -> Result<Self>
+    fn init(
+        header_height: u16,
+        status_height: u16,
+    ) -> Result<Self, ScreenError>
     where
         Self: Sized;
     fn header_bounds(&self) -> Rect;
     fn content_bounds(&self) -> Rect;
     fn status_bounds(&self) -> Rect;
-    fn draw_header(&mut self, header: &[&str]) -> Result<()>;
-    fn draw_status(&mut self, status: &str) -> Result<()>;
-    fn draw_content(&mut self, content: &[&str]) -> Result<()>;
-    fn draw(&mut self, content: &[StyledString], bound: &Rect) -> Result<()>;
-    fn cleanup(&mut self) -> Result<()>;
+    fn draw_header(&mut self, header: &[&str]) -> io::Result<()>;
+    fn draw_status(&mut self, status: &str) -> io::Result<()>;
+    fn draw_content(&mut self, content: &[&str]) -> io::Result<()>;
+    fn draw(
+        &mut self,
+        content: &[StyledString],
+        bound: &Rect,
+    ) -> io::Result<()>;
 }
 
 pub struct ConsoleScreen {
     #[allow(unused)]
     bounds: Rect,
+    con: Con,
     header_bounds: Rect,
     content_bounds: Rect,
     status_bounds: Rect,
-    out: Stdout,
 }
 
 #[derive(Debug)]
@@ -103,64 +109,69 @@ impl From<io::Error> for ScreenError {
     }
 }
 
-impl From<crossterm::ErrorKind> for ScreenError {
-    fn from(e: crossterm::ErrorKind) -> Self {
-        match e {
-            crossterm::ErrorKind::IoError(_ioerr) => ScreenError::SomeError,
-            crossterm::ErrorKind::FmtError(_fmterr) => ScreenError::SomeError,
-            crossterm::ErrorKind::Utf8Error(_utferr) => ScreenError::SomeError,
-            crossterm::ErrorKind::ParseIntError(_parseerr) => {
-                ScreenError::SomeError
-            }
-            crossterm::ErrorKind::ResizingTerminalFailure(_msg) => {
-                ScreenError::SomeError
-            }
-            _ => ScreenError::SomeError,
-        }
-    }
-}
-
 type StyledString<'a> = Vec<(&'a str, &'a Style)>;
 
-impl Screen for ConsoleScreen {
-    fn init(header_height: u16, status_height: u16) -> Result<Self> {
-        terminal::enable_raw_mode()?;
-        let mut out = stdout();
-        out.execute(terminal::Clear(terminal::ClearType::All))?;
-        out.execute(cursor::Hide)?;
-        let (cols, rows) = terminal::size()?;
-        let screen_bounds = Rect {
-            topleft: Point { x: 0, y: 0 },
-            botright: Point { x: cols, y: rows },
-        };
+impl ConsoleScreen {
+    fn new(
+        header_height: u16,
+        status_height: u16,
+    ) -> Result<Self, ScreenError> {
+        let mut con = Con::new()?;
+        let start_commands =
+            vec![Cmd::ClearScreen, Cmd::HideCursor];
+        let win = con.size()?;
+        con.execute(start_commands)?;
+        let origin = Point { x: 0, y: 0 };
+        let screen_bounds = Rect::from_topleft(origin, win.width, win.height);
         let desired_height = header_height + status_height + 1;
-        if desired_height > rows {
+        if desired_height > win.height {
             return Err(ScreenError::NotEnoughSpace {
                 desired_height: desired_height,
-                screen_height: rows,
+                screen_height: win.height,
             });
         }
         let header_bounds =
-            Rect::from_topleft(screen_bounds.topleft, cols, header_height);
+            Rect::from_topleft(screen_bounds.topleft, win.width, header_height);
         let status_bounds =
-            Rect::from_botright(screen_bounds.botright, cols, status_height);
+            Rect::from_botright(screen_bounds.botright, win.width, status_height);
         let content_bounds = Rect {
             topleft: Point {
                 x: 0,
                 y: header_bounds.botright.y,
             },
             botright: Point {
-                x: cols,
+                x: win.width,
                 y: status_bounds.topleft.y,
             },
         };
         Ok(ConsoleScreen {
+            con: con,
             bounds: screen_bounds,
             header_bounds: header_bounds,
             content_bounds: content_bounds,
             status_bounds: status_bounds,
-            out: out,
         })
+    }
+}
+
+impl Drop for ConsoleScreen {
+    fn drop(&mut self) {
+        self.con
+            .execute(vec![
+                Cmd::Pos { x: 0, y: 0 },
+                Cmd::ClearScreen,
+                Cmd::ShowCursor,
+            ])
+            .unwrap()
+    }
+}
+
+impl Screen for ConsoleScreen {
+    fn init(
+        header_height: u16,
+        status_height: u16,
+    ) -> Result<Self, ScreenError> {
+        Self::new(header_height, status_height)
     }
 
     fn header_bounds(&self) -> Rect {
@@ -175,49 +186,65 @@ impl Screen for ConsoleScreen {
         self.status_bounds
     }
 
-    fn draw_header(&mut self, header: &[&str]) -> Result<()> {
-        let style = Style { attrs: vec![], colour: Colour::Normal };
-        let arg: Vec<StyledString> = header.iter().map(|&s| vec![(s, &style)]).collect();
+    fn draw_header(&mut self, header: &[&str]) -> io::Result<()> {
+        let style = Style {
+            attrs: vec![],
+            colour: Colour::Normal,
+        };
+        let arg: Vec<StyledString> =
+            header.iter().map(|&s| vec![(s, &style)]).collect();
         self.draw(&arg, &self.header_bounds.clone())
     }
 
-    fn draw_status(&mut self, status: &str) -> Result<()> {
-        let style = Style { attrs: vec![Attribute::Inverse], colour: Colour::Normal };
+    fn draw_status(&mut self, status: &str) -> io::Result<()> {
+        let style = Style {
+            attrs: vec![Attribute::Inverse],
+            colour: Colour::Normal,
+        };
         self.draw(&[vec![(status, &style)]], &self.status_bounds.clone())
     }
 
-    fn draw(&mut self, content: &[StyledString], bounds: &Rect) -> Result<()> {
+    fn draw(
+        &mut self,
+        content: &[StyledString],
+        bounds: &Rect,
+    ) -> io::Result<()> {
         let lines_to_draw = content.iter().take(bounds.height() as usize);
-        for (i, line_parts) in lines_to_draw.enumerate() {
-            let mv = cursor::MoveTo(bounds.topleft.x, bounds.topleft.y + i as u16);
-            self.out.execute(mv)?;
-            self.out.execute(terminal::Clear(terminal::ClearType::UntilNewLine))?;
-            for (line_part, style) in line_parts {
-                for attr in &style.attrs {
-                    let s = match attr {
-                        Attribute::Bold => style::Attribute::Bold,
-                        Attribute::Underline => style::Attribute::Underlined,
-                        Attribute::Inverse => style::Attribute::Reverse,
-                    };
-                    self.out.execute(style::SetAttribute(s))?;
-                }
-                self.out.execute(style::Print(line_part))?;
-                self.out.execute(style::SetAttribute(style::Attribute::Reset))?;
-            }
-        }
-        self.out.flush()?;
-        Ok(())
+        let batch = lines_to_draw.enumerate().flat_map(|(i, line_parts)| {
+            let move_and_clear = vec![
+                Cmd::Pos {
+                    x: bounds.topleft.x,
+                    y: bounds.topleft.y + i as u16,
+                },
+                Cmd::ClearLine,
+            ];
+            let print = line_parts.into_iter().flat_map(|(line_part, style)| {
+                let mut commands = vec![];
+                commands.extend(style.attrs.iter().map(|attr| {
+                    match attr {
+                        Attribute::Bold => Cmd::Bold,
+                        Attribute::Underline => Cmd::Underline,
+                        Attribute::Inverse => Cmd::Inverse
+                    }
+                }));
+                commands.push( Cmd::Print {
+                    content: String::from(*line_part),
+                });
+                commands.push(Cmd::Reset);
+                commands
+            });
+            move_and_clear.into_iter().chain(print)
+        });
+        self.con.execute(batch)
     }
 
-    fn draw_content(&mut self, content: &[&str]) -> Result<()> {
-        let style = Style { attrs: vec![], colour: Colour::Normal };
-        let arg: Vec<StyledString> = content.iter().map(|&s| vec![(s, &style)]).collect();
+    fn draw_content(&mut self, content: &[&str]) -> io::Result<()> {
+        let style = Style {
+            attrs: vec![],
+            colour: Colour::Normal,
+        };
+        let arg: Vec<StyledString> =
+            content.iter().map(|&s| vec![(s, &style)]).collect();
         self.draw(&arg, &self.content_bounds.clone())
-    }
-
-    fn cleanup(&mut self) -> Result<()> {
-        queue!(self.out, terminal::Clear(terminal::ClearType::All))?;
-        terminal::disable_raw_mode()?;
-        Ok(())
     }
 }

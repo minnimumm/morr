@@ -7,6 +7,7 @@ use crossterm::event::{Event, KeyEvent, KeyModifiers};
 use memmap::Mmap;
 use std::env;
 use std::fs::File;
+use std::io;
 use std::iter;
 
 mod line_reader;
@@ -28,12 +29,12 @@ fn main() -> Result<(), MorrError> {
         screen.content_bounds().height() + screen.header_bounds().height();
     let lines = buffer.read(&LinesRange::pos(0..max_lines as usize));
     let (header, rest) = &lines.lines.split_at(header_height as usize);
-    screen.draw_header(header)?;
+    screen.draw_header(header).unwrap();
     let initial_mode = Mode::Viewing {
         current_range: lines.range,
     };
-    screen.draw_content(rest)?;
-    screen.draw_status(&filename)?;
+    screen.draw_content(rest).unwrap();
+    screen.draw_status(&filename).unwrap();
     let header_end: usize = header.iter().map(|line| line.len() + 1).sum();
     let buffer = Buffer::new(&buf[header_end..]);
     let mut state = State::new(initial_mode, header, screen, buffer);
@@ -103,7 +104,7 @@ impl Mode {
         current_range: &mut LinesRange,
         screen: &mut S,
         buf: &mut Buffer,
-    ) -> screen::Result<()>
+    ) -> io::Result<()>
     where
         S: Screen, {
         let new_range = mv(vmove, &current_range, screen.content_bounds());
@@ -128,9 +129,7 @@ impl Mode {
             Key(KeyEvent {
                 code: Char('j'), ..
             }) => Reaction::V(VerticalMove::LineDown),
-            Key(KeyEvent { code: Up, .. }) => {
-                Reaction::V(VerticalMove::LineUp)
-            }
+            Key(KeyEvent { code: Up, .. }) => Reaction::V(VerticalMove::LineUp),
             Key(KeyEvent { code: Down, .. }) => {
                 Reaction::V(VerticalMove::LineDown)
             }
@@ -210,7 +209,6 @@ impl<'a, S: screen::Screen> State<'a, S> {
                 self.mode_stack.push(next_mode);
             }
         }
-        self.screen.cleanup();
         Ok(())
     }
 }
@@ -236,6 +234,7 @@ fn mv(
 #[derive(Debug)]
 enum MorrError {
     ScreenError { err: screen::ScreenError },
+    NoTTY,
 }
 
 impl From<screen::ScreenError> for MorrError {
@@ -243,6 +242,7 @@ impl From<screen::ScreenError> for MorrError {
         MorrError::ScreenError { err: e }
     }
 }
+
 enum VerticalMove {
     Bottom,
     HalfPageDown,
