@@ -82,9 +82,7 @@ impl Con {
             Cmd::ShowCursor => String::from("\x1B[?25h"),
             Cmd::HideCursor => String::from("\x1B[?25l"),
             Cmd::ClearScreen => String::from("\x1B[2J"),
-            Cmd::Pos { x, y } => {
-                format!("\x1B[{y};{x}H", x = x + 1, y = y + 1)
-            }
+            Cmd::Pos { x, y } => format!("\x1B[{y};{x}H", x = x + 1, y = y + 1),
             Cmd::ClearLine => String::from("\x1B[2K"),
             Cmd::Print { content } => content.clone(),
             Cmd::Reset => String::from("\x1B[0m"),

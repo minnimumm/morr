@@ -10,6 +10,8 @@ use std::fs::File;
 use std::io;
 use std::iter;
 
+use tempfile;
+
 mod line_reader;
 mod screen;
 
@@ -17,10 +19,20 @@ use line_reader::{Buffer, LinesRange};
 use screen::{Rect, Screen};
 
 fn main() -> Result<(), MorrError> {
-    let filename = env::args().nth(1).expect("No file name passed");
-    let buf = File::open(&filename)
-        .and_then(|file| unsafe { Mmap::map(&file) })
-        .unwrap();
+    let (display_name, file) = match env::args().nth(1) {
+        Some(path) => File::open(&path).map(move |file| (path, file))?,
+        None => {
+            let mut file = tempfile::tempfile()?;
+            io::copy(&mut io::stdin(), &mut file)?;
+            ("sin".to_string(), file)
+        }
+    };
+    if let Ok(meta) = file.metadata() {
+        if meta.len() == 0 {
+            return Ok(());
+        }
+    }
+    let buf = unsafe { Mmap::map(&file)? };
     let header_height = 3;
     let status = 1;
     let mut screen = screen::ConsoleScreen::init(header_height, status)?;
@@ -34,7 +46,7 @@ fn main() -> Result<(), MorrError> {
         current_range: lines.range,
     };
     screen.draw_content(rest).unwrap();
-    screen.draw_status(&filename).unwrap();
+    screen.draw_status(&display_name).unwrap();
     let header_end: usize = header.iter().map(|line| line.len() + 1).sum();
     let buffer = Buffer::new(&buf[header_end..]);
     let mut state = State::new(initial_mode, header, screen, buffer);
@@ -234,7 +246,15 @@ fn mv(
 #[derive(Debug)]
 enum MorrError {
     ScreenError { err: screen::ScreenError },
+    SomeError { err: io::Error },
+    NoFile,
     NoTTY,
+}
+
+impl From<io::Error> for MorrError {
+    fn from(err: io::Error) -> Self {
+        MorrError::SomeError { err }
+    }
 }
 
 impl From<screen::ScreenError> for MorrError {

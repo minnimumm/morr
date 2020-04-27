@@ -2,10 +2,10 @@ use std::io;
 
 use std::marker::Sized;
 
-#[path = "./con.rs"]
-mod con;
+#[path = "./cons.rs"]
+mod cons;
 
-use con::{Con, Cmd, Win};
+use cons::{Cmd, Con};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Point {
@@ -88,7 +88,7 @@ pub trait Screen {
 pub struct ConsoleScreen {
     #[allow(unused)]
     bounds: Rect,
-    con: Con,
+    cons: Con,
     header_bounds: Rect,
     content_bounds: Rect,
     status_bounds: Rect,
@@ -116,11 +116,10 @@ impl ConsoleScreen {
         header_height: u16,
         status_height: u16,
     ) -> Result<Self, ScreenError> {
-        let mut con = Con::new()?;
-        let start_commands =
-            vec![Cmd::ClearScreen, Cmd::HideCursor];
-        let win = con.size()?;
-        con.execute(start_commands)?;
+        let mut cons = Con::new()?;
+        let start_commands = vec![Cmd::ClearScreen, Cmd::HideCursor];
+        let win = cons.size()?;
+        cons.execute(start_commands)?;
         let origin = Point { x: 0, y: 0 };
         let screen_bounds = Rect::from_topleft(origin, win.width, win.height);
         let desired_height = header_height + status_height + 1;
@@ -132,8 +131,11 @@ impl ConsoleScreen {
         }
         let header_bounds =
             Rect::from_topleft(screen_bounds.topleft, win.width, header_height);
-        let status_bounds =
-            Rect::from_botright(screen_bounds.botright, win.width, status_height);
+        let status_bounds = Rect::from_botright(
+            screen_bounds.botright,
+            win.width,
+            status_height,
+        );
         let content_bounds = Rect {
             topleft: Point {
                 x: 0,
@@ -145,7 +147,7 @@ impl ConsoleScreen {
             },
         };
         Ok(ConsoleScreen {
-            con: con,
+            cons: cons,
             bounds: screen_bounds,
             header_bounds: header_bounds,
             content_bounds: content_bounds,
@@ -156,7 +158,7 @@ impl ConsoleScreen {
 
 impl Drop for ConsoleScreen {
     fn drop(&mut self) {
-        self.con
+        self.cons
             .execute(vec![
                 Cmd::Pos { x: 0, y: 0 },
                 Cmd::ClearScreen,
@@ -218,24 +220,25 @@ impl Screen for ConsoleScreen {
                 },
                 Cmd::ClearLine,
             ];
-            let print = line_parts.into_iter().flat_map(|(line_part, style)| {
-                let mut commands = vec![];
-                commands.extend(style.attrs.iter().map(|attr| {
-                    match attr {
-                        Attribute::Bold => Cmd::Bold,
-                        Attribute::Underline => Cmd::Underline,
-                        Attribute::Inverse => Cmd::Inverse
-                    }
-                }));
-                commands.push( Cmd::Print {
-                    content: String::from(*line_part),
+            let print =
+                line_parts.into_iter().flat_map(|(line_part, style)| {
+                    let mut commands = vec![];
+                    commands.extend(style.attrs.iter().map(
+                        |attr| match attr {
+                            Attribute::Bold => Cmd::Bold,
+                            Attribute::Underline => Cmd::Underline,
+                            Attribute::Inverse => Cmd::Inverse,
+                        },
+                    ));
+                    commands.push(Cmd::Print {
+                        content: String::from(*line_part),
+                    });
+                    commands.push(Cmd::Reset);
+                    commands
                 });
-                commands.push(Cmd::Reset);
-                commands
-            });
             move_and_clear.into_iter().chain(print)
         });
-        self.con.execute(batch)
+        self.cons.execute(batch)
     }
 
     fn draw_content(&mut self, content: &[&str]) -> io::Result<()> {
