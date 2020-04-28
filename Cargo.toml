@@ -12,6 +12,7 @@ crossterm = "0.17"
 memchr = { version = "2", default-features = false }
 memmap = "0.7.0"
 tempfile = "3"
+winapi = { version =  "0.3.8", features = ["winbase", "consoleapi", "processenv", "handleapi", "synchapi", "impl-default"] }
 
 [profile.release]
 opt-level = 'z'

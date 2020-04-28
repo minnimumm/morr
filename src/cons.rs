@@ -1,5 +1,27 @@
 use std::io;
 use std::io::Write;
+use std::ptr::null_mut;
+use std::ffi::OsStr;
+#[cfg(target_family = "windows")]
+use std::os::windows::ffi::OsStrExt;
+
+use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode, ReadConsoleInputW};
+use winapi::um::{
+    fileapi::{CreateFileW, OPEN_EXISTING},
+    handleapi::{CloseHandle, INVALID_HANDLE_VALUE},
+    processenv::GetStdHandle,
+    winbase::{STD_INPUT_HANDLE, STD_OUTPUT_HANDLE},
+    winnt::{
+        FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE, HANDLE,
+    },
+};
+use winapi::{
+    shared::minwindef::DWORD,
+    um::wincon::{
+        ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT, ENABLE_WINDOW_INPUT, INPUT_RECORD, 
+    },
+};
+
 
 #[cfg(target_family = "unix")]
 mod unix;
@@ -11,9 +33,6 @@ use unix::err_if_neg;
 
 #[cfg(target_family = "windows")]
 mod windows;
-
-#[cfg(target_family = "windows")]
-use windows::WinCon;
 
 #[derive(Debug)]
 pub enum Cmd {
@@ -49,6 +68,11 @@ impl Drop for UnixCon {
             libc::tcsetattr(self.fd, libc::TCSAFLUSH, &mut self.orig_termios);
         }
     }
+}
+
+#[cfg(target_family = "windows")]
+pub struct WinCon {
+    handle: HANDLE,
 }
 
 pub struct Con {
@@ -114,18 +138,35 @@ impl Con {
 }
 
 #[cfg(target_family = "windows")]
-impl Con for WinCon {
+impl Con {
     pub fn new() -> io::Result<Self> {
-        unimplemented!()
+        let utf16: Vec<u16> = OsStr::new("CONIN$\0").encode_wide().collect();
+        let utf16_ptr: *const u16 = utf16.as_ptr();
+        let handle = unsafe {
+            CreateFileW(
+                utf16_ptr,
+                GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                null_mut(),
+                OPEN_EXISTING,
+                0,
+                null_mut(),
+            )
+        };
+        Ok(Self {
+            con: WinCon {
+                handle: handle
+            }
+        })
     }
 
     pub fn size(&self) -> io::Result<Win> {
         unimplemented!()
     }
 
-    fn execute<I>(&mut self, commands: &I) -> io::Result<()>
+    pub fn execute<I>(&mut self, commands: I) -> io::Result<()>
     where
-        I: Iterator<ConsoleCommand>, {
+        I: IntoIterator<Item = Cmd>, {
         unimplemented!()
     }
 }
