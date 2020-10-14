@@ -1,5 +1,25 @@
+use winapi::um::wincon::COMMON_LVB_UNDERSCORE;
+use winapi::um::wincon::COMMON_LVB_REVERSE_VIDEO;
+use winapi::um::wincon::SetConsoleTextAttribute;
+use winapi::um::wincon::FOREGROUND_BLUE;
+use winapi::um::wincon::FOREGROUND_RED;
+use winapi::um::wincon::FOREGROUND_GREEN;
+use winapi::um::wincon::CONSOLE_CURSOR_INFO;
+use winapi::um::wincon::SetConsoleCursorInfo;
+use winapi::um::wincon::WriteConsoleOutputCharacterW;
+use winapi::um::wincon::WriteConsoleOutputCharacterA;
+use winapi::um::wincontypes::COORD;
+use winapi::um::wincon::SetConsoleCursorPosition;
+use winapi::um::wincon::FillConsoleOutputAttribute;
+use winapi::um::wincon::FillConsoleOutputCharacterA;
+use winapi::shared::ntdef::NULL;
+use winapi::um::consoleapi::WriteConsoleW;
+use winapi::ctypes::c_void;
+use winapi::um::wincon::GetConsoleScreenBufferInfo;
+use winapi::um::wincon::CONSOLE_SCREEN_BUFFER_INFO;
 use std::io;
 use std::io::Write;
+use std::convert::TryInto;
 use std::ptr::null_mut;
 use std::ffi::OsStr;
 #[cfg(target_family = "windows")]
@@ -18,7 +38,7 @@ use winapi::um::{
 use winapi::{
     shared::minwindef::DWORD,
     um::wincon::{
-        ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT, ENABLE_WINDOW_INPUT, INPUT_RECORD, 
+        ENABLE_ECHO_INPUT, ENABLE_LINE_INPUT, ENABLE_PROCESSED_INPUT, ENABLE_WINDOW_INPUT, INPUT_RECORD, GetLargestConsoleWindowSize 
     },
 };
 
@@ -72,7 +92,8 @@ impl Drop for UnixCon {
 
 #[cfg(target_family = "windows")]
 pub struct WinCon {
-    handle: HANDLE,
+    in_handle: HANDLE,
+    out_handle: HANDLE,
 }
 
 pub struct Con {
@@ -140,11 +161,24 @@ impl Con {
 #[cfg(target_family = "windows")]
 impl Con {
     pub fn new() -> io::Result<Self> {
-        let utf16: Vec<u16> = OsStr::new("CONIN$\0").encode_wide().collect();
-        let utf16_ptr: *const u16 = utf16.as_ptr();
-        let handle = unsafe {
+        let in_utf16: Vec<u16> = OsStr::new("CONIN$\0").encode_wide().collect();
+        let in_utf16_ptr: *const u16 = in_utf16.as_ptr();
+        let in_handle = unsafe {
             CreateFileW(
-                utf16_ptr,
+                in_utf16_ptr,
+                GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                null_mut(),
+                OPEN_EXISTING,
+                0,
+                null_mut(),
+            )
+        };
+        let out_utf16: Vec<u16> = OsStr::new("CONOUT$\0").encode_wide().collect();
+        let out_utf16_ptr: *const u16 = out_utf16.as_ptr();
+        let out_handle = unsafe {
+            CreateFileW(
+                out_utf16_ptr,
                 GENERIC_READ | GENERIC_WRITE,
                 FILE_SHARE_READ | FILE_SHARE_WRITE,
                 null_mut(),
@@ -155,18 +189,161 @@ impl Con {
         };
         Ok(Self {
             con: WinCon {
-                handle: handle
+                in_handle: in_handle,
+                out_handle: out_handle,
             }
         })
     }
 
-    pub fn size(&self) -> io::Result<Win> {
-        unimplemented!()
+    pub fn size(&self) -> io::Result<Win> { 
+        let mut buffer_info: CONSOLE_SCREEN_BUFFER_INFO = unsafe { std::mem::zeroed() };
+        unsafe { GetConsoleScreenBufferInfo(self.con.out_handle, &mut buffer_info) };
+        // let win_size = unsafe { GetLargestConsoleWindowSize(self.con.out_handle) };
+        let window_height: i16 = buffer_info.srWindow.Bottom - buffer_info.srWindow.Top;
+        Ok(Win {
+            width: buffer_info.srWindow.Right as u16 + 1,
+            height: window_height as u16 + 1,
+            // width: win_size.X as u16,
+            // height: win_size.Y as u16,
+        })
     }
 
     pub fn execute<I>(&mut self, commands: I) -> io::Result<()>
     where
         I: IntoIterator<Item = Cmd>, {
-        unimplemented!()
+            commands.into_iter()
+                .for_each(|cmd| match cmd {
+                    Cmd::ShowCursor => {
+                        let mut cursor_info = CONSOLE_CURSOR_INFO {
+                            dwSize: 10 as u32,
+                            bVisible: 1 as i32
+                        };
+                        { unsafe { SetConsoleCursorInfo(self.con.out_handle, &mut cursor_info ) }; }
+                    },
+                    Cmd::HideCursor => {
+                        let mut cursor_info = CONSOLE_CURSOR_INFO {
+                            dwSize: 10 as u32,
+                            bVisible: 0 as i32
+                        };
+                        { unsafe { SetConsoleCursorInfo(self.con.out_handle, &mut cursor_info ) }; }
+                    },
+                    Cmd::ClearScreen => { self.clear(); },
+                    Cmd::ClearLine => { self.clear_line(); },
+                    Cmd::Bold => {},
+                    Cmd::Underline => {
+                        { unsafe { SetConsoleTextAttribute(
+                            self.con.out_handle,
+                            COMMON_LVB_UNDERSCORE
+                        ) }};
+                    },
+                    Cmd::Inverse => {
+                        // { unsafe { SetConsoleTextAttribute(
+                        //     self.con.out_handle,
+                        //     COMMON_LVB_REVERSE_VIDEO
+                        // ) }};
+                    },
+                    Cmd::Reset => {},
+                    Cmd::Print{content} => { self.print_at(content, 0, 0); },
+                    Cmd::Pos{x, y} => { unsafe { SetConsoleCursorPosition(self.con.out_handle, COORD {X: x as i16, Y: y as i16}) }; },
+                    _ => { },
+                });
+
+            Ok(())
+    }
+
+    fn print_at<P>(&self, content: String, x: P, y: P) -> io::Result<()> 
+    where
+        P: TryInto<i16>
+    {
+                        // { unsafe { SetConsoleTextAttribute(
+                        //     self.con.out_handle,
+                        //     FOREGROUND_GREEN
+                        // ) }};
+        let coords: COORD = x.try_into().and_then(|x_| y.try_into().map(|y_| COORD {X: x_, Y: y_})).map_err(|e| io::ErrorKind::Other)?;
+        let console_handle: HANDLE = self.con.out_handle;
+        let mut buffer_info: CONSOLE_SCREEN_BUFFER_INFO = unsafe { std::mem::zeroed() };
+        unsafe { GetConsoleScreenBufferInfo(self.con.out_handle, &mut buffer_info) };
+
+        // let top_left: COORD = COORD {X: 0, Y: 0 };
+        // unsafe { SetConsoleCursorPosition(console_handle, top_left) };
+        let utf16: Vec<u16> = content.encode_utf16().collect();
+        let mut cells_written: u32 = 0;
+        // write to console
+        unsafe {
+            WriteConsoleW(
+                self.con.out_handle,
+                utf16.as_ptr() as *const _ as *const c_void,
+                utf16.len() as u32,
+                &mut cells_written,
+                NULL,
+            );
+        }
+        // let utf16: Vec<u16> = content.encode_utf16().collect();
+        // let mut cells_written: u32 = 0;
+        // unsafe {WriteConsoleOutputCharacterW(
+        //     console_handle,
+        //     utf16.as_ptr(),
+        //     utf16.len() as u32, 
+        //     coords, 
+        //     &mut cells_written
+        // ) };
+        // FillConsoleOutputAttribute(
+        //     console, FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
+        //     screen.dwSize.X * screen.dwSize.Y, topLeft, &written
+        // );
+        // unsafe { SetConsoleCursorPosition(console_handle, coords) };
+        Ok(())
+            // get string from u8[] and parse it to an c_str
+            // let utf8 = match std::str::from_utf8(b"AAAAA") {
+            //     Ok(string) => string,
+            //     Err(_) => {
+            //         return Err(io::Error::new(
+            //             io::ErrorKind::Other,
+            //             "Could not parse to utf8 string",
+            //         ));
+            //     }
+            // };
+
+
+    }
+
+    fn clear_line(&self) -> io::Result<()> {
+        let console_handle: HANDLE = self.con.out_handle;
+        let mut buffer_info: CONSOLE_SCREEN_BUFFER_INFO = unsafe { std::mem::zeroed() };
+        unsafe { GetConsoleScreenBufferInfo(self.con.out_handle, &mut buffer_info) };
+        let mut cells_written: u32 = 0;
+        unsafe { FillConsoleOutputCharacterA(
+            console_handle,
+            b' '.try_into().unwrap(), 
+            buffer_info.srWindow.Right.try_into().unwrap(), 
+            buffer_info.dwCursorPosition, 
+            &mut cells_written
+        ) };
+        Ok(())
+    }
+
+    fn clear(&self) -> io::Result<()> {
+        let top_left: COORD = COORD {X: 0, Y: 0 };
+        let console_handle: HANDLE = self.con.out_handle;
+        let mut buffer_info: CONSOLE_SCREEN_BUFFER_INFO = unsafe { std::mem::zeroed() };
+        unsafe { GetConsoleScreenBufferInfo(self.con.out_handle, &mut buffer_info) };
+
+        let mut cells_written: u32 = 0;
+        let window_height: i16 = buffer_info.srWindow.Bottom - buffer_info.srWindow.Top;
+        unsafe { FillConsoleOutputCharacterA(
+            console_handle,
+            b' '.try_into().unwrap(), 
+            // 1000 as u32,
+            (buffer_info.srWindow.Right * window_height).try_into().unwrap(),
+            // (buffer_info.dwSize.X * buffer_info.dwSize.Y).try_into().unwrap(), 
+            top_left, 
+            &mut cells_written
+        ) };
+        // FillConsoleOutputAttribute(
+        //     console, FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
+        //     screen.dwSize.X * screen.dwSize.Y, topLeft, &written
+        // );
+        // unsafe { SetConsoleCursorPosition(console_handle, top_left) };
+        Ok(())
     }
 }
