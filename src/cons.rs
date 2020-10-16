@@ -1,3 +1,7 @@
+use winapi::um::wincon::SetCurrentConsoleFontEx;
+use winapi::um::wincon::CONSOLE_FONT_INFOEX;
+use winapi::um::wincon::GetCurrentConsoleFontEx;
+use winapi::um::wincon::PCONSOLE_FONT_INFOEX;
 use winapi::um::wincon::COMMON_LVB_UNDERSCORE;
 use winapi::um::wincon::COMMON_LVB_REVERSE_VIDEO;
 use winapi::um::wincon::SetConsoleTextAttribute;
@@ -229,7 +233,12 @@ impl Con {
                     },
                     Cmd::ClearScreen => { self.clear(); },
                     Cmd::ClearLine => { self.clear_line(); },
-                    Cmd::Bold => {},
+                    Cmd::Bold => {
+                        let mut font_info: CONSOLE_FONT_INFOEX = unsafe { std::mem::zeroed() };
+                        unsafe { GetCurrentConsoleFontEx(self.con.out_handle, 0, &mut font_info) };
+                        font_info.FontWeight = 700;
+                        unsafe { SetCurrentConsoleFontEx(self.con.out_handle, 0, &mut font_info) };
+                    },
                     Cmd::Underline => {
                         { unsafe { SetConsoleTextAttribute(
                             self.con.out_handle,
@@ -237,10 +246,12 @@ impl Con {
                         ) }};
                     },
                     Cmd::Inverse => {
-                        // { unsafe { SetConsoleTextAttribute(
-                        //     self.con.out_handle,
-                        //     COMMON_LVB_REVERSE_VIDEO
-                        // ) }};
+                        let mut buffer_info: CONSOLE_SCREEN_BUFFER_INFO = unsafe { std::mem::zeroed() };
+                        unsafe { GetConsoleScreenBufferInfo(self.con.out_handle, &mut buffer_info) };
+                        { unsafe { SetConsoleTextAttribute(
+                            self.con.out_handle,
+                            COMMON_LVB_REVERSE_VIDEO | buffer_info.wAttributes
+                        ) }};
                     },
                     Cmd::Reset => {},
                     Cmd::Print{content} => { self.print_at(content, 0, 0); },
