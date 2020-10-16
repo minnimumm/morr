@@ -17,6 +17,7 @@ use winapi::um::wincon::SetConsoleCursorPosition;
 use winapi::um::wincon::FillConsoleOutputAttribute;
 use winapi::um::wincon::FillConsoleOutputCharacterA;
 use winapi::shared::ntdef::NULL;
+use winapi::shared::minwindef::WORD;
 use winapi::um::consoleapi::WriteConsoleW;
 use winapi::ctypes::c_void;
 use winapi::um::wincon::GetConsoleScreenBufferInfo;
@@ -98,6 +99,7 @@ impl Drop for UnixCon {
 pub struct WinCon {
     in_handle: HANDLE,
     out_handle: HANDLE,
+    wAttributes: WORD 
 }
 
 pub struct Con {
@@ -191,10 +193,13 @@ impl Con {
                 null_mut(),
             )
         };
+        let mut buffer_info: CONSOLE_SCREEN_BUFFER_INFO = unsafe { std::mem::zeroed() };
+        unsafe { GetConsoleScreenBufferInfo(out_handle, &mut buffer_info) };
         Ok(Self {
             con: WinCon {
                 in_handle: in_handle,
                 out_handle: out_handle,
+                wAttributes: buffer_info.wAttributes 
             }
         })
     }
@@ -234,10 +239,11 @@ impl Con {
                     Cmd::ClearScreen => { self.clear(); },
                     Cmd::ClearLine => { self.clear_line(); },
                     Cmd::Bold => {
-                        let mut font_info: CONSOLE_FONT_INFOEX = unsafe { std::mem::zeroed() };
-                        unsafe { GetCurrentConsoleFontEx(self.con.out_handle, 0, &mut font_info) };
-                        font_info.FontWeight = 700;
-                        unsafe { SetCurrentConsoleFontEx(self.con.out_handle, 0, &mut font_info) };
+                        // Not working - can only make text in whole console BOLD
+                        // let mut font_info: CONSOLE_FONT_INFOEX = unsafe { std::mem::zeroed() };
+                        // unsafe { GetCurrentConsoleFontEx(self.con.out_handle, 0, &mut font_info) };
+                        // font_info.FontWeight = 700;
+                        // unsafe { SetCurrentConsoleFontEx(self.con.out_handle, 0, &mut font_info) };
                     },
                     Cmd::Underline => {
                         { unsafe { SetConsoleTextAttribute(
@@ -253,7 +259,12 @@ impl Con {
                             COMMON_LVB_REVERSE_VIDEO | buffer_info.wAttributes
                         ) }};
                     },
-                    Cmd::Reset => {},
+                    Cmd::Reset => {
+                        { unsafe { SetConsoleTextAttribute(
+                            self.con.out_handle,
+                            self.con.wAttributes
+                        ) }};
+                    },
                     Cmd::Print{content} => { self.print_at(content, 0, 0); },
                     Cmd::Pos{x, y} => { unsafe { SetConsoleCursorPosition(self.con.out_handle, COORD {X: x as i16, Y: y as i16}) }; },
                     _ => { },
