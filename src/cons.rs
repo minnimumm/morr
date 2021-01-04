@@ -15,6 +15,8 @@ mod windows;
 #[cfg(target_family = "windows")]
 use windows::WinCon;
 
+use std::io::Read;
+
 #[derive(Debug)]
 pub enum Cmd {
     ShowCursor,
@@ -38,8 +40,44 @@ pub struct Win {
 pub struct UnixCon {
     pub output: std::io::Stdout,
     pub input: std::io::Stdin,
+    buf: [u8; 2],
     orig_termios: libc::termios,
     fd: std::os::unix::io::RawFd,
+}
+
+impl UnixCon {
+    fn read_event(self) -> Result<Event, std::io::Error> {
+        let n = self.input.lock().read(&mut self.buf)?;
+        let event = match self.buf[..n] {
+            [b'a'] => Event::A,
+            [b'b'] => Event::B,
+            [b'c'] => Event::C,
+            [b'd'] => Event::D,
+            [b'e'] => Event::E,
+            [b'f'] => Event::F,
+            [b'g'] => Event::G,
+            [b'h'] => Event::H,
+            [b'i'] => Event::I,
+            [b'j'] => Event::J,
+            [b'k'] => Event::K,
+            [b'l'] => Event::L,
+            [b'm'] => Event::M,
+            [b'n'] => Event::N,
+            [b'o'] => Event::O,
+            [b'p'] => Event::P,
+            [b'q'] => Event::Q,
+            [b'r'] => Event::R,
+            [b's'] => Event::S,
+            [b't'] => Event::T,
+            [b'u'] => Event::U,
+            [b'v'] => Event::V,
+            [b'w'] => Event::W,
+            [b'x'] => Event::X,
+            [b'y'] => Event::Y,
+            [b'z'] => Event::Z,
+        };
+        Ok(event)
+    }
 }
 
 #[cfg(target_family = "unix")]
@@ -56,6 +94,81 @@ pub struct Con {
     pub con: UnixCon,
     #[cfg(target_family = "windows")]
     pub con: WinCon,
+}
+
+enum Event {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    Zero,
+    One,
+    Two,
+    Three,
+    Four,
+    Five,
+    Six,
+    Seven,
+    Eight,
+    Nine,
+    ExlamationMark,
+    DoubleQuote,
+    NumberSign,
+    DollarSign,
+    PercentSign,
+    Ampersand,
+    SingleQuote,
+    OpeningParenthesis,
+    ClosingParenthesis,
+    Asterisk,
+    PlusSign,
+    Comma,
+    MinusSign,
+    Dot,
+    ForwardSlash,
+    Colon,
+    SemiColon,
+    LessThanSign,
+    EqualSign,
+    MoreThanSign,
+    QuestionMark,
+    AtSign,
+    OpeningBracket,
+    BackwardSlash,
+    ClosingBracket,
+    Caret,
+    Underscore,
+    GraveAccent,
+    OpeningBraces,
+    VerticalLine,
+    ClosingBraces,
+    Tilde,
+    LeftArrow,
+    RightArrow,
+    UpArrow,
+    DownArrow,
 }
 
 #[cfg(target_family = "unix")]
